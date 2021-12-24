@@ -1,4 +1,4 @@
-package scanx
+package scany
 
 import (
 	"image"
@@ -51,13 +51,45 @@ type (
 	}
 )
 
+func Include(r fixed.Rectangle26_6, p fixed.Point26_6) fixed.Rectangle26_6 {
+	if p.X < r.Min.X {
+		r.Min.X = p.X
+	}
+	if p.X > r.Max.X {
+		r.Max.X = p.X
+	}
+	if p.Y < r.Min.Y {
+		r.Min.Y = p.Y
+	}
+	if p.Y > r.Max.Y {
+		r.Max.Y = p.Y
+	}
+	return r
+}
+
+func Expand(r fixed.Rectangle26_6, s fixed.Rectangle26_6) fixed.Rectangle26_6 {
+	if s.Min.X < r.Min.X {
+		r.Min.X = s.Min.X
+	}
+	if s.Max.X > r.Max.X {
+		r.Max.X = s.Max.X
+	}
+	if s.Min.Y < r.Min.Y {
+		r.Min.Y = s.Min.Y
+	}
+	if s.Max.Y > r.Max.Y {
+		r.Max.Y = s.Max.Y
+	}
+	return r
+}
+
 // LineToSegments takes lines from the s.lineChan
 // and breaks them into cover and area/cover
 // cell values that are sent to the cellWorkers for
 // sorting and storage
 func (s *ScannerT) LineToSegments(i int) {
 	for line := range s.lineChan {
-		s.extents[i].Add(line.a)
+		s.extents[i] = Include(s.extents[i], line.a)
 		dx := int(line.b.X - line.a.X)
 		dy := int(line.b.Y - line.a.Y)
 		if dy != 0 { // A horizontal line is ignored by the CL-AA algorithm
@@ -81,7 +113,7 @@ func (s *ScannerT) LineToSegments(i int) {
 }
 
 // SendWestLine takes a line that runs from low y to high y and
-// increases negatively in the x axis. Cover and area/cover
+// decreases along in the x axis. Cover and area/cover
 // cell values are sent to the cellWorkers for sorting and storage.
 func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
 	ax := int(line.a.X)
@@ -113,7 +145,7 @@ func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
 			fy1 = 0
 			fx1 = 64
 		case yw > yn || xw > xn: // line intersects horizontal cell wall
-			fx2 := xw & (64 - 1)
+			fx2 := xw - xn
 			cover := (64 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx2 + fx1, flip: flip}
@@ -122,7 +154,7 @@ func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
 			fx1 = fx2
 			fy1 = 0
 		default: // line intersects vertical cell wall
-			fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
 			cover := (fy2 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx1, flip: flip}
@@ -135,7 +167,7 @@ func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
 	if yn <= by { // Only horizontal cell wall intersections remain
 		for yn <= by {
 			xw := ax + (yn-ay)*dx/dy
-			fx2 := xw & (64 - 1)
+			fx2 := xw - xn
 			cover := (64 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx2 + fx1, flip: flip}
@@ -147,7 +179,7 @@ func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
 	} else { // Only vertical cell wall intersections remain
 		for xn >= bx {
 			yw := ay + (xn-ax)*dy/dx
-			fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
 			cover := (fy2 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx1, flip: flip}
@@ -165,7 +197,7 @@ func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
 }
 
 // SendEastLine takes a line that runs from low y to high y and
-// increases postively in the x axis. Cover and area/cover
+// increases along in the x axis. Cover and area/cover
 // cell values that are sent to the cellWorkers for
 // sorting and storage.
 func (s *ScannerT) SendEastLine(line Line, dx, dy, flip int) {
@@ -198,7 +230,7 @@ func (s *ScannerT) SendEastLine(line Line, dx, dy, flip int) {
 			fy1 = 0
 			fx1 = 0
 		case yw > yn || xw < xn: // line intersects horizontal cell wall
-			fx2 := xw & (64 - 1)
+			fx2 := xw - xn + 64
 			cover := (64 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx2 + fx1, flip: flip}
@@ -207,7 +239,7 @@ func (s *ScannerT) SendEastLine(line Line, dx, dy, flip int) {
 			fx1 = fx2
 			fy1 = 0
 		default: // line intersects vertical cell wall
-			fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
 			cover := (fy2 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: 64 + fx1, flip: flip}
@@ -220,7 +252,7 @@ func (s *ScannerT) SendEastLine(line Line, dx, dy, flip int) {
 	if yn <= by { // Only horizontal cell wall intersections remain
 		for yn <= by {
 			xw := ax + (yn-ay)*dx/dy
-			fx2 := xw & (64 - 1)
+			fx2 := xw - xn + 64
 			cover := (64 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx2 + fx1, flip: flip}
@@ -232,7 +264,7 @@ func (s *ScannerT) SendEastLine(line Line, dx, dy, flip int) {
 	} else { // Only vertical cell wall intersections remain
 		for xn <= bx {
 			yw := ay + (xn-ax)*dy/dx
-			fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
 			cover := (fy2 - fy1)
 			s.cellWaiter.Add(1)
 			s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: 64 + fx1, flip: flip}
@@ -291,7 +323,6 @@ func (s *ScannerT) CellSaver(threadIndex int) {
 
 	for v := range s.cellWorkers[threadIndex].cellChan {
 		// No cover or off the top or bottom so can be ignored
-		//fmt.Println("v", v.x, v.y, v.AreaOvCov*v.cover*v.flip, v.cover*v.flip)
 
 		if v.cover == 0 || v.y < 0 || v.y >= s.height {
 			s.cellWaiter.Done()
@@ -434,11 +465,11 @@ func (s *ScannerT) Close() {
 // Start initiates a new path. If a path is already in
 // progress it will automatically close.
 func (s *ScannerT) Start(a fixed.Point26_6) {
-	if s.inPath {
-		if s.firstPoint != s.lastPoint {
-			s.Line(s.firstPoint) // close the last path
-		}
-	}
+	// if s.inPath {
+	// 	if s.firstPoint != s.lastPoint {
+	// 		s.Line(s.firstPoint) // close the last path
+	// 	}
+	// }
 	s.firstPoint = a
 	s.lastPoint = a
 	s.inPath = true
@@ -492,9 +523,11 @@ func (s *ScannerT) Clear() {
 
 // GetPathExtent returns the bounaries of the current path
 func (s *ScannerT) GetPathExtent() fixed.Rectangle26_6 {
+	s.lineWaiter.Wait() // These have to finish before the extent can be calculated
+	s.cellWaiter.Wait()
 	maxRect := s.extents[0]
 	for i := 1; i < s.threads; i++ {
-		maxRect = maxRect.Union(s.extents[i])
+		maxRect = Expand(maxRect, s.extents[i])
 	}
 	return maxRect
 }

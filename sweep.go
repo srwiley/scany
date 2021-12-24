@@ -1,13 +1,15 @@
-package scanx
+package scany
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 
 	"github.com/srwiley/rasterx"
-	//"image/draw"
-	//"math"
+)
+
+const (
+	m        = 1<<16 - 1
+	q uint32 = 0xFF00
 )
 
 // Collector translates the line seweep data to the target format.
@@ -33,9 +35,11 @@ type RGBACollector struct {
 // len is the number of steps in the y direction the sweep
 // extends.
 func (r *RGBACollector) Sweeper(x, y, len int, alpha int16) {
+
 	offset := x*4 + r.Image.Stride*y
 	ma := uint32(alpha) << 4
-	if ma > 65535 { // Kind of frustating to do this, but
+	//fmt.Println("ma", ma, alpha)
+	if ma > 65535 { // Kind of frustating to have to do this, but
 		// cant think of better work around.
 		ma = 65535
 	}
@@ -55,16 +59,22 @@ func (r *RGBACollector) Sweeper(x, y, len int, alpha int16) {
 	} else {
 		for i := offset; i < offset+len*4; i += 4 {
 			rcr, rcg, rcb, rca := r.ColorFunc(x, y).RGBA()
+			//fmt.Println("col", r.ColorFunc(x, y))
 			x++
 			dr := uint32(r.Image.Pix[i+0])
 			dg := uint32(r.Image.Pix[i+1])
 			db := uint32(r.Image.Pix[i+2])
 			da := uint32(r.Image.Pix[i+3])
 			a := (m - (rca * ma / m)) * 0x101
+			//fmt.Println("cr", (dr*a+rcr*ma)/m>>8)
+			//fmt.Println("cg", (dg*a+rcg*ma)/m>>8)
+			//fmt.Println("cg", (db*a+rcb*ma)/m>>8)
+			//fmt.Println("cca", (da*a+rca*ma)/m>>8)
 			r.Image.Pix[i+0] = uint8((dr*a + rcr*ma) / m >> 8)
 			r.Image.Pix[i+1] = uint8((dg*a + rcg*ma) / m >> 8)
 			r.Image.Pix[i+2] = uint8((db*a + rcb*ma) / m >> 8)
 			r.Image.Pix[i+3] = uint8((da*a + rca*ma) / m >> 8)
+			//fmt.Println("res", r.Image.Pix[i+0], r.Image.Pix[i+1], r.Image.Pix[i+2], r.Image.Pix[i+3])
 		}
 	}
 }
@@ -75,8 +85,23 @@ func (r *RGBACollector) SetColor(clr interface{}) {
 	switch c := clr.(type) {
 	case rasterx.ColorFunc:
 		r.ColorFunc = c
+	case color.RGBA:
+		r.Color = c
+		r.ColorFunc = nil
+	case color.Color:
+		rd, g, b, a := c.RGBA()
+		r.Color = color.RGBA{
+			R: uint8(rd >> 8),
+			G: uint8(g >> 8),
+			B: uint8(b >> 8),
+			A: uint8(a >> 8)}
+		r.ColorFunc = nil
 	default:
-		r.Color = getColorRGBA(c)
+		r.Color = color.RGBA{
+			R: 0,
+			G: 0,
+			B: 0,
+			A: 0}
 		r.ColorFunc = nil
 	}
 }
@@ -99,17 +124,12 @@ func (s *ScannerT) Sweep(thread int) {
 				cc := store[ic]
 				cover := cc.cover
 				lastX := cc.x
-				val := 64*cover - cc.area/4
-				if val < 0 { // first val in each line should be all pos or negative, but
+				val := 64*cover - cc.area/2
+				if val < 0 { // all vals in each line should be all pos or negative, but
 					// to avoid repeat code, just testing per line for now
 					flip = -1
 				}
-
-				if scanLine == 270 {
-
-					fmt.Print(cc)
-				}
-				s.collector.Sweeper(lastX, scanLine, 1, int16((64*cover-cc.area/4)*flip))
+				s.collector.Sweeper(lastX, scanLine, 1, int16(val*flip))
 				ic = cc.yn
 				for ic != -1 {
 					cc := store[ic]
@@ -120,12 +140,7 @@ func (s *ScannerT) Sweep(thread int) {
 					}
 					cover += cc.cover
 					lastX = cc.x
-
-					if scanLine == 270 {
-
-						fmt.Print(cc)
-					}
-					s.collector.Sweeper(lastX, scanLine, 1, int16((64*cover-cc.area/4)*flip))
+					s.collector.Sweeper(lastX, scanLine, 1, int16((64*cover-cc.area/2)*flip))
 					ic = cc.yn
 				}
 			}

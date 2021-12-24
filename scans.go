@@ -1,4 +1,4 @@
-package scanx
+package scany
 
 import (
 	"image"
@@ -9,27 +9,11 @@ import (
 
 type (
 
-	// Used as entries in the scanLinks linked list
-	// Cell struct {
-	// 	cover, area, x, yn int
-	// }
-	// // Fixed point line
-	// Line struct {
-	// 	a, b fixed.Point26_6
-	// }
-	// CellWorker listends to cellChan
-	// to store cell cover and area
-	// values into the scanLines linked
-	// list of cells
-	// CellWorker struct {
-	// 	cellChan  chan CellM
-	// 	sweepChan chan bool
-	// 	scanLinks []Cell
-	// 	lineCount int
-	// }
-	// ScannerT is a multi-threaded version of the cl-aa
-	// antialiasing algorithm. ScannerT implements the rasterx.Scanner
+	// ScannerS is a single threaded version of the cl-aa
+	// antialiasing algorithm. ScannerS implements the rasterx.Scanner
 	// interface, so it can be used with the rasterx and oksvg packages.
+	// There is considerable repeat code between ScannerS and ScannerT
+	// which, while not desirable, is done to optimize performance.
 	ScannerS struct {
 		extent     fixed.Rectangle26_6
 		scanLinks  []Cell
@@ -42,12 +26,20 @@ type (
 	}
 )
 
+// var tbox = fixed.Rectangle26_6{Min: fixed.Point26_6{X: 250 * 64, Y: 200 * 64},
+// 	Max: fixed.Point26_6{X: 280 * 64, Y: 250 * 64}}
+
+// func InRect(r fixed.Rectangle26_6, a fixed.Point26_6) bool {
+// 	//fmt.Println(a, r.Max, r.Min)
+// 	return a.X < r.Max.X && r.Min.X < a.X && a.Y < r.Max.Y && a.Y > r.Min.Y
+// }
+
 // LineToSegments takes lines from the s.lineChan
 // and breaks them into cover and area/cover
 // cell values that are sent to the cellWorkers for
 // sorting and storage
 func (s *ScannerS) LineToSegments(line Line) {
-	s.extent.Add(line.a)
+	s.extent = Include(s.extent, line.a)
 	dy := int(line.b.Y - line.a.Y)
 	if dy != 0 { // A horizontal line is ignored by the CL-AA algorithm
 		dx := int(line.b.X - line.a.X)
@@ -55,21 +47,25 @@ func (s *ScannerS) LineToSegments(line Line) {
 		case dx == 0:
 			s.SendVerticalLine(line)
 		case dx > 0 && dy > 0:
+			//fmt.Println("se ", line.a, line.b, 1)
 			s.SendEastLine(line, dx, dy, 1)
 		case dx < 0 && dy < 0:
 			line.a, line.b = line.b, line.a
+			//fmt.Println("se ", line.a, line.b, -1)
 			s.SendEastLine(line, dx, dy, -1)
 		case dx < 0 && dy > 0:
+			//fmt.Println("sw ", line.a, line.b, 1)
 			s.SendWestLine(line, dx, dy, 1)
 		default: // dx > 0 && dy < 0
 			line.a, line.b = line.b, line.a
+			//fmt.Println("sw ", line.a, line.b, -1)
 			s.SendWestLine(line, dx, dy, -1)
 		}
 	}
 }
 
 // SendWestLine takes a line that runs from low y to high y and
-// increases negatively in the x axis. Cover and area/cover
+// decreases along the x axis. Cover and area/cover
 // cell values are sent to the cellWorkers for sorting and storage.
 func (s *ScannerS) SendWestLine(line Line, dx, dy, flip int) {
 	ax := int(line.a.X)
@@ -92,7 +88,7 @@ func (s *ScannerS) SendWestLine(line Line, dx, dy, flip int) {
 		switch {
 		case xw == xn && yn == yw: // corner intersection
 			cover := (64 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(fx1))
+			s.SaveCell(cx, cy, cover, cover*(fx1), "WC")
 			yn += 64
 			xn -= 64
 			cx--
@@ -100,17 +96,21 @@ func (s *ScannerS) SendWestLine(line Line, dx, dy, flip int) {
 			fy1 = 0
 			fx1 = 64
 		case yw > yn || xw > xn: // line intersects horizontal cell wall
-			fx2 := xw & (64 - 1)
+			//fx2 := xw & (64 - 1)
+			fx2 := xw - xn //& (64 - 1)
+			//fmt.Println("wy", fx2, xw&(64-1))
 			cover := (64 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(fx2+fx1))
+			s.SaveCell(cx, cy, cover, cover*(fx2+fx1), "WY")
 			yn += 64
 			cy++
 			fx1 = fx2
 			fy1 = 0
 		default: // line intersects vertical cell wall
-			fy2 := yw & (64 - 1)
+			//fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
+			//fmt.Println("wx", fy2, yw&(64-1))
 			cover := (fy2 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(fx1))
+			s.SaveCell(cx, cy, cover, cover*(fx1), "WX")
 			xn -= 64
 			cx--
 			fx1 = 64
@@ -120,9 +120,12 @@ func (s *ScannerS) SendWestLine(line Line, dx, dy, flip int) {
 	if yn <= by { // Only horizontal cell wall intersections remain
 		for yn <= by {
 			xw := ax + (yn-ay)*dx/dy
-			fx2 := xw & (64 - 1)
+			//fx2 := xw & (64 - 1)
+			fx2 := xw - xn //& (64 - 1)
+			//fmt.Println("wy2", fx2, xw&(64-1))
 			cover := (64 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(fx2+fx1))
+			//fmt.Println("fx1,fx2", fx1, fx2)
+			s.SaveCell(cx, cy, cover, cover*(fx2+fx1), "WTY")
 			yn += 64
 			cy++
 			fx1 = fx2
@@ -131,9 +134,11 @@ func (s *ScannerS) SendWestLine(line Line, dx, dy, flip int) {
 	} else { // Only vertical cell wall intersections remain
 		for xn >= bx {
 			yw := ay + (xn-ax)*dy/dx
-			fy2 := yw & (64 - 1)
+			//fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
+			//fmt.Println("wx2", fy2, yw&(64-1))
 			cover := (fy2 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(fx1))
+			s.SaveCell(cx, cy, cover, cover*(fx1), "WTX")
 			xn -= 64
 			cx--
 			fx1 = 64
@@ -143,12 +148,12 @@ func (s *ScannerS) SendWestLine(line Line, dx, dy, flip int) {
 	fx2 := bx & (64 - 1)
 	fy2 := by & (64 - 1)
 	cover := (fy2 - fy1) * flip
-	s.SaveCell(cx, cy, cover, cover*(fx2+fx1))
+	s.SaveCell(cx, cy, cover, cover*(fx2+fx1), "WE")
 }
 
 // SendEastLine takes a line that runs from low y to high y and
-// increases postively in the x axis. Cover and area/cover
-// cell values that are sent to the cellWorkers for
+// increases along in the x axis. Cover and area/cover
+// cell values that are passed to SaveCell for
 // sorting and storage.
 func (s *ScannerS) SendEastLine(line Line, dx, dy, flip int) {
 	ax := int(line.a.X)
@@ -171,7 +176,7 @@ func (s *ScannerS) SendEastLine(line Line, dx, dy, flip int) {
 		switch {
 		case xw == xn && yn == yw: // corner intersection
 			cover := (64 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(64+fx1))
+			s.SaveCell(cx, cy, cover, cover*(64+fx1), "EC")
 			yn += 64
 			xn += 64
 			cx++
@@ -179,17 +184,21 @@ func (s *ScannerS) SendEastLine(line Line, dx, dy, flip int) {
 			fy1 = 0
 			fx1 = 0
 		case yw > yn || xw < xn: // line intersects horizontal cell wall
-			fx2 := xw & (64 - 1)
+			//fx2 := xw & (64 - 1)
+			fx2 := xw - xn + 64
+			//fmt.Println("***ety", fx2, xw&(64-1))
 			cover := (64 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(fx2+fx1))
+			s.SaveCell(cx, cy, cover, cover*(fx2+fx1), "EY")
 			yn += 64
 			cy++
 			fx1 = fx2
 			fy1 = 0
 		default: // line intersects vertical cell wall
-			fy2 := yw & (64 - 1)
+			//fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
+			//fmt.Println("ey", fy2, yw&(64-1))
 			cover := (fy2 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(64+fx1))
+			s.SaveCell(cx, cy, cover, cover*(64+fx1), "EX")
 			xn += 64
 			cx++
 			fx1 = 0
@@ -199,9 +208,11 @@ func (s *ScannerS) SendEastLine(line Line, dx, dy, flip int) {
 	if yn <= by { // Only horizontal cell wall intersections remain
 		for yn <= by {
 			xw := ax + (yn-ay)*dx/dy
-			fx2 := xw & (64 - 1)
+			//fx2 := xw & (64 - 1)
+			fx2 := xw - xn + 64 //& (64 - 1)
+			//fmt.Println("***ety", fx2, xw&(64-1))
 			cover := (64 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(fx2+fx1))
+			s.SaveCell(cx, cy, cover, cover*(fx2+fx1), "ETY")
 			yn += 64
 			cy++
 			fx1 = fx2
@@ -210,9 +221,11 @@ func (s *ScannerS) SendEastLine(line Line, dx, dy, flip int) {
 	} else { // Only vertical cell wall intersections remain
 		for xn <= bx {
 			yw := ay + (xn-ax)*dy/dx
-			fy2 := yw & (64 - 1)
+			//fy2 := yw & (64 - 1)
+			fy2 := -yn + 64 + yw
+			//fmt.Println("ey2", fy2, yw&(64-1))
 			cover := (fy2 - fy1) * flip
-			s.SaveCell(cx, cy, cover, cover*(64+fx1))
+			s.SaveCell(cx, cy, cover, cover*(64+fx1), "ETX")
 			xn += 64
 			cx++
 			fx1 = 0
@@ -222,7 +235,7 @@ func (s *ScannerS) SendEastLine(line Line, dx, dy, flip int) {
 	fx2 := bx & (64 - 1)
 	fy2 := by & (64 - 1)
 	cover := (fy2 - fy1) * flip
-	s.SaveCell(cx, cy, cover, cover*(fx2+fx1))
+	s.SaveCell(cx, cy, cover, cover*(fx2+fx1), "ET")
 }
 
 // SendVerticalLine takes a vertical line that runs in either direction
@@ -235,7 +248,7 @@ func (s *ScannerS) SendVerticalLine(line Line) {
 	x1f2 := (int(line.a.X) - (x1 << 6)) * 2
 	if y1 == y2 {
 		cover := int(line.b.Y - line.a.Y)
-		s.SaveCell(x1, y1, cover, cover*x1f2)
+		s.SaveCell(x1, y1, cover, cover*x1f2, "V1")
 		return
 	}
 	y1f := int(line.a.Y) - (y1 << 6)
@@ -247,23 +260,18 @@ func (s *ScannerS) SendVerticalLine(line Line) {
 		flip = -1
 	}
 	cover := (64 - y1f) * flip
-	s.SaveCell(x1, y1, cover, cover*x1f2)
+	s.SaveCell(x1, y1, cover, cover*x1f2, "V2")
 	for y := y1 + 1; y < y2; y++ {
 		cover := flip << 6
-		//s.cellWaiter.Add(1)
-		//s.SaveCell(CellM{x: x1, y: y, cover: 64, AreaOvCov: x1f * 2, flip: flip})
-		s.SaveCell(x1, y, cover, cover*x1f2)
+		s.SaveCell(x1, y, cover, cover*x1f2, "V4")
 	}
 	cover = y2f * flip
-	s.SaveCell(x1, y2, cover, cover*x1f2)
+	s.SaveCell(x1, y2, cover, cover*x1f2, "V3")
 }
 
-// CellSaver threadIndex determines the cell worker
-// this thread acts on. One CellSaver per
-// threadIndex is instantiated, so updates to scanLinks
-// slice will not conflict
-func (s *ScannerS) SaveCell(x, y, cover, area int) {
-
+// SaveCell adds the cover and area values to the scanLinks linked list structure
+func (s *ScannerS) SaveCell(x, y, cover, area int, mx string) {
+	//fmt.Println(mx, cover, area, "x,y", x, y)
 	// No cover or off the top or bottom so can be ignored
 	if cover == 0 || y < 0 || y >= s.height {
 		return
@@ -331,7 +339,7 @@ func (s *ScannerS) SetBounds(height, width int) {
 // values to the target format such as an image.RGBA. A collector for image.RGBA, RGBACollector, is
 // defined in this package.
 func NewScanS(width, height int, collector Collector) (s *ScannerS) {
-	s = &ScannerS{height: height, width: width, collector: collector}
+	s = &ScannerS{height: height, width: width, collector: collector, inPath: false}
 	for j := 0; j < height; j++ {
 		// Cell.x = -1 means it is a sentinel and cell.yn = -1 means the list is empty.
 		s.scanLinks = append(s.scanLinks, Cell{x: -1, yn: -1})
@@ -361,11 +369,6 @@ func NewScanS(width, height int, collector Collector) (s *ScannerS) {
 // Start initiates a new path. If a path is already in
 // progress it will automatically close.
 func (s *ScannerS) Start(a fixed.Point26_6) {
-	if s.inPath {
-		if s.firstPoint != s.lastPoint {
-			s.Line(s.firstPoint) // close the last path
-		}
-	}
 	s.firstPoint = a
 	s.lastPoint = a
 	s.inPath = true
@@ -373,27 +376,19 @@ func (s *ScannerS) Start(a fixed.Point26_6) {
 
 // Line adds a straight line segment to the path
 func (s *ScannerS) Line(b fixed.Point26_6) {
+	//fmt.Println("ln", b)
+	// line := Line{a: s.lastPoint, b: b}
+	// if InRect(tbox, line.a) || InRect(tbox, line.b) {
+	// 	fmt.Println("line", line.a, line.b)
+	// }
+
 	s.LineToSegments(Line{a: s.lastPoint, b: b})
 	s.lastPoint = b
-}
-
-// Draw finishes the path if it is open
-// and then sweeps the accumulated area and cover
-// cell values to the collector
-func (s *ScannerS) Draw() {
-	if s.inPath {
-		if s.firstPoint != s.lastPoint {
-			s.Line(s.firstPoint) // Close the last path
-		}
-		s.inPath = false
-	}
-	s.sweep()
 }
 
 // Clear reinitializes the cell linked lists and
 // the path extents to make it ready for new paths
 func (s *ScannerS) Clear() {
-
 	s.scanLinks = s.scanLinks[:s.height]
 	for j := range s.scanLinks {
 		s.scanLinks[j].yn = -1
@@ -406,6 +401,7 @@ func (s *ScannerS) Clear() {
 
 // GetPathExtent returns the bounaries of the current path
 func (s *ScannerS) GetPathExtent() fixed.Rectangle26_6 {
+	//fmt.Println("extent", s.extent)
 	return s.extent
 }
 
@@ -424,7 +420,16 @@ func (s *ScannerS) SetClip(rect image.Rectangle) {
 
 }
 
-func (s *ScannerS) sweep() {
+// Draw finishes the path if it is open
+// and then sweeps the accumulated area and cover
+// cell values to the collector
+func (s *ScannerS) Draw() {
+	if s.inPath {
+		if s.firstPoint != s.lastPoint {
+			s.Line(s.firstPoint) // Close the last path
+		}
+		s.inPath = false
+	}
 	for i := 0; i < s.height; i++ {
 		ic := s.scanLinks[i].yn
 		flip := 1
@@ -432,8 +437,8 @@ func (s *ScannerS) sweep() {
 			cc := s.scanLinks[ic]
 			cover := cc.cover
 			lastX := cc.x
-			val := cover<<6 - cc.area>>2
-			if val < 0 { // first val in each line should be all pos or negative, but
+			val := cover<<6 - cc.area>>1
+			if val <= 0 { // first val in each line should be all pos or negative, but
 				// to avoid repeat code, just testing per line for now
 				flip = -1
 			}
@@ -447,7 +452,7 @@ func (s *ScannerS) sweep() {
 				}
 				cover += cc.cover
 				lastX = cc.x
-				s.collector.Sweeper(lastX, i, 1, int16((cover<<6-cc.area>>2)*flip))
+				s.collector.Sweeper(lastX, i, 1, int16((cover<<6-cc.area>>1)*flip))
 				ic = cc.yn
 			}
 		}
