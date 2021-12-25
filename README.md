@@ -37,7 +37,7 @@ scanner.Close()
 See the test files for additional examples and benchmarks.
 
 Thanks to [Freepik](http://www.freepik.com) from [Flaticon](https://www.flaticon.com/)
-Licensed by [Creative Commons 3.0](http://creativecommons.org/licenses/by/3.0/) for the example icon, and those used in the test/landscapeIcons folder.
+Licensed by [Creative Commons 3.0](http://creativecommons.org/licenses/by/3.0/) for the example icon, and those used in the testdata/svg/landscapeIcons folder.
 
 
 
