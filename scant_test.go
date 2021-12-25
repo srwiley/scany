@@ -82,6 +82,32 @@ func TestScanHalfCirc(t *testing.T) {
 	icon.Draw(rasterM, 1.0)
 	SaveToPngFile("testdata/halfCirc.png", img)
 }
+func TestCompHalfCirc(t *testing.T) {
+	icon, errSvg := oksvg.ReadIcon("testdata/svg/halfCirc.svg", oksvg.WarnErrorMode)
+	if errSvg != nil {
+		t.Error(errSvg)
+	}
+	w, h := int(icon.ViewBox.W), int(icon.ViewBox.H)
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	collector := &scany.RGBACollector{Image: img}
+	scanM := scany.NewScanT(1, w, h, collector)
+	rasterM := rasterx.NewDasher(w, h, scanM)
+	icon.Draw(rasterM, 1.0)
+
+	img2 := image.NewRGBA(image.Rect(0, 0, w, h))
+	collector2 := &scany.RGBACollector{Image: img2}
+	scanS := scany.NewScanS(w, h, collector2)
+	rasterS := rasterx.NewDasher(w, h, scanS)
+	icon.Draw(rasterS, 1.0)
+
+	for i := 0; i < w; i++ {
+		for j := 0; j < h; j++ {
+			if img.Pix[i*4+1+img.Stride*j] != img2.Pix[i*4+1+img2.Stride*j] {
+				fmt.Println("mismatch", i, j, img.Pix[i*4+1+img.Stride*j], img2.Pix[i*4+1+img2.Stride*j])
+			}
+		}
+	}
+}
 
 func TestScanIcon(t *testing.T) {
 	icon, errSvg := oksvg.ReadIcon("testdata/svg/landscapeIcons/sea.svg", oksvg.WarnErrorMode)
@@ -105,7 +131,7 @@ func TestGrads(t *testing.T) {
 	w, h := int(icon.ViewBox.W), int(icon.ViewBox.H)
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	collector := &scany.RGBACollector{Image: img}
-	scanM := scany.NewScanT(10, w, h, collector)
+	scanM := scany.NewScanT(1, w, h, collector)
 	rasterM := rasterx.NewDasher(w, h, scanM)
 	icon.Draw(rasterM, 1.0)
 	SaveToPngFile("testdata/TestShapes6.png", img)

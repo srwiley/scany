@@ -1,8 +1,6 @@
 # scany
 About:
 
-This package is still in beta. There is a subtle bug still to be hunted down, but it basically works.
-
 The scany package is a denovo implementation the CL-AA antigrain algorithm in both a single thread or multi-threaded structure by ScanS and ScanT, respectivly. Both implement the rasterx.Scanner interface, and therefore they can be used with the rasterx and oksvg. The single threaded ScanS is vitually as fast as the ScanFT structure implemented in github.com/swiley/scanFT. Benchmarks vary a bit from run to run but ScanS appears to be within 1 or 2 percent as fast as ScanFT. The difference is that ScanFT is under the Freetype license, since it is a direct port from the C implmentation of Freetype. while ScanS and ScanT are under the less restrictive MIT3 license, so they can be freely incoporated in commercial as well as open source projects.
 
 If ScanT is run on a single thread it is somewhat around 50% slower than ScanFT or ScanS. However, as additional threads are added it will equal and then exceed the speed of the single thread implementations. At what point this occurs, depends on the image being rendered. SVG's with gradients, for example, particularly benefit from using multiple threads. Also note that number of threads specified can exceed the number of available CPU cores and still increase speed.

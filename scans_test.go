@@ -63,9 +63,6 @@ func TestScanSIcon(t *testing.T) {
 	collector := &scany.RGBACollector{Image: img}
 	scanM := scany.NewScanS(w, h, collector)
 
-	//painter := scanFT.NewRGBAPainter(img)
-	//scanM := scanFT.NewScannerFT(w, h, painter)
-
 	rasterM := rasterx.NewDasher(w, h, scanM)
 	icon.Draw(rasterM, 1.0)
 	SaveToPngFile("testdata/sea.png", img)

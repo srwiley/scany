@@ -1,3 +1,13 @@
+// Copyright 2021 by the scany Authors. All rights reserved.
+//
+// created: 6/1/2021 by S.R.Wiley
+// The sany package provides a single threaded and multi-threaded implementation
+// of the CL-AA anti-aliasing algorithm. It can be used with the rasterx package
+// as it implements the Scanner interface.
+// An object implementing the scany.Collector interface translates alpha values
+// from the CL-AA alogrithm to the target image format. A collector for image.RGBA
+// pictures is provided by the scany.RGBACollector
+
 package scany
 
 import (
@@ -106,26 +116,31 @@ func (r *RGBACollector) SetColor(clr interface{}) {
 	}
 }
 
-// Sweep receives a boolean trigger from the
+// sweep receives a boolean trigger from the
 // sweepChan to sweep the assigned
 // thread value and associated scan lines to the collector
 // the first value is used to determine if the path is an
 // "innie" or an "outtie".
-func (s *ScannerT) Sweep(thread int) {
+func (s *ScannerT) sweep(thread int) {
 	for range s.cellWorkers[thread].sweepChan {
 		store := s.cellWorkers[thread].scanLinks
 		// Iterate over each linked list start sentinel
 		for i := 0; i < s.cellWorkers[thread].lineCount; i++ {
 			// Sweep scan line
 			ic := store[i].yn
-			if ic != -1 {
+			cover := 0
+			for ic != -1 {
 				scanLine := i*s.threads + thread
 				flip := 1
 				cc := store[ic]
-				cover := cc.cover
+				cover += cc.cover
 				lastX := cc.x
 				val := 64*cover - cc.area/2
-				if val < 0 { // all vals in each line should be all pos or negative, but
+				if val == 0 {
+					ic = cc.yn
+					continue
+				}
+				if val <= 0 { // all vals in each line should be all pos or negative, but
 					// to avoid repeat code, just testing per line for now
 					flip = -1
 				}

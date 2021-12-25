@@ -1,3 +1,13 @@
+// Copyright 2021 by the scany Authors. All rights reserved.
+//
+// created: 6/1/2021 by S.R.Wiley
+// The sany package provides a single threaded and multi-threaded implementation
+// of the CL-AA anti-aliasing algorithm. It can be used with the rasterx package
+// as it implements the Scanner interface.
+// An object implementing the scany.Collector interface translates alpha values
+// from the CL-AA alogrithm to the target image format. A collector for image.RGBA
+// pictures is provided by the scany.RGBACollector
+
 package scany
 
 import (
@@ -51,7 +61,8 @@ type (
 	}
 )
 
-func Include(r fixed.Rectangle26_6, p fixed.Point26_6) fixed.Rectangle26_6 {
+// Include increases the rectangle r to include the point p
+func include(r fixed.Rectangle26_6, p fixed.Point26_6) fixed.Rectangle26_6 {
 	if p.X < r.Min.X {
 		r.Min.X = p.X
 	}
@@ -67,7 +78,8 @@ func Include(r fixed.Rectangle26_6, p fixed.Point26_6) fixed.Rectangle26_6 {
 	return r
 }
 
-func Expand(r fixed.Rectangle26_6, s fixed.Rectangle26_6) fixed.Rectangle26_6 {
+// Expand increases the rectangle r to include the rectangle s
+func expand(r fixed.Rectangle26_6, s fixed.Rectangle26_6) fixed.Rectangle26_6 {
 	if s.Min.X < r.Min.X {
 		r.Min.X = s.Min.X
 	}
@@ -83,39 +95,39 @@ func Expand(r fixed.Rectangle26_6, s fixed.Rectangle26_6) fixed.Rectangle26_6 {
 	return r
 }
 
-// LineToSegments takes lines from the s.lineChan
+// lineToSegments takes lines from the s.lineChan
 // and breaks them into cover and area/cover
 // cell values that are sent to the cellWorkers for
 // sorting and storage
-func (s *ScannerT) LineToSegments(i int) {
+func (s *ScannerT) lineToSegments(i int) {
 	for line := range s.lineChan {
-		s.extents[i] = Include(s.extents[i], line.a)
+		s.extents[i] = include(s.extents[i], line.a)
 		dx := int(line.b.X - line.a.X)
 		dy := int(line.b.Y - line.a.Y)
 		if dy != 0 { // A horizontal line is ignored by the CL-AA algorithm
 			switch {
 			case dx == 0:
-				s.SendVerticalLine(line)
+				s.sendVerticalLine(line)
 			case dx > 0 && dy > 0:
-				s.SendEastLine(line, dx, dy, 1)
+				s.sendEastLine(line, dx, dy, 1)
 			case dx < 0 && dy < 0:
 				line.a, line.b = line.b, line.a
-				s.SendEastLine(line, dx, dy, -1)
+				s.sendEastLine(line, dx, dy, -1)
 			case dx < 0 && dy > 0:
-				s.SendWestLine(line, dx, dy, 1)
+				s.sendWestLine(line, dx, dy, 1)
 			default: // dx > 0 && dy < 0
 				line.a, line.b = line.b, line.a
-				s.SendWestLine(line, dx, dy, -1)
+				s.sendWestLine(line, dx, dy, -1)
 			}
 		}
 		s.lineWaiter.Done()
 	}
 }
 
-// SendWestLine takes a line that runs from low y to high y and
+// sendWestLine takes a line that runs from low y to high y and
 // decreases along in the x axis. Cover and area/cover
 // cell values are sent to the cellWorkers for sorting and storage.
-func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
+func (s *ScannerT) sendWestLine(line Line, dx, dy, flip int) {
 	ax := int(line.a.X)
 	ay := int(line.a.Y)
 	bx := int(line.b.X)
@@ -196,11 +208,11 @@ func (s *ScannerT) SendWestLine(line Line, dx, dy, flip int) {
 	s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx2 + fx1, flip: flip}
 }
 
-// SendEastLine takes a line that runs from low y to high y and
+// sendEastLine takes a line that runs from low y to high y and
 // increases along in the x axis. Cover and area/cover
 // cell values that are sent to the cellWorkers for
 // sorting and storage.
-func (s *ScannerT) SendEastLine(line Line, dx, dy, flip int) {
+func (s *ScannerT) sendEastLine(line Line, dx, dy, flip int) {
 	ax := int(line.a.X)
 	ay := int(line.a.Y)
 	bx := int(line.b.X)
@@ -281,10 +293,10 @@ func (s *ScannerT) SendEastLine(line Line, dx, dy, flip int) {
 	s.cellWorkers[cy%s.threads].cellChan <- CellM{x: cx, y: cy, cover: cover, AreaOvCov: fx2 + fx1, flip: flip}
 }
 
-// SendVerticalLine takes a vertical line that runs in either direction
+// sendVerticalLine takes a vertical line that runs in either direction
 // and sends Cover and area/cover cell values to the cellWorkers for
 // sorting and storage.
-func (s *ScannerT) SendVerticalLine(line Line) {
+func (s *ScannerT) sendVerticalLine(line Line) {
 	y1 := int(line.a.Y) >> 6
 	y2 := int(line.b.Y) >> 6
 	x1 := int(line.a.X) >> 6
@@ -315,15 +327,13 @@ func (s *ScannerT) SendVerticalLine(line Line) {
 	s.cellWorkers[y2%s.threads].cellChan <- CellM{x: x1, y: y2, cover: cover, AreaOvCov: x1f2, flip: flip}
 }
 
-// CellSaver threadIndex determines the cell worker
-// this thread acts on. One CellSaver per
+// cellSaver threadIndex determines the cell worker
+// this thread acts on. One cellSaver per
 // threadIndex is instantiated, so updates to scanLinks
 // slice will not conflict
-func (s *ScannerT) CellSaver(threadIndex int) {
-
+func (s *ScannerT) cellSaver(threadIndex int) {
 	for v := range s.cellWorkers[threadIndex].cellChan {
 		// No cover or off the top or bottom so can be ignored
-
 		if v.cover == 0 || v.y < 0 || v.y >= s.height {
 			s.cellWaiter.Done()
 			continue
@@ -426,9 +436,9 @@ func NewScanT(threads, width, height int, collector Collector) (s *ScannerT) {
 		s.cellWorkers[i].cellChan = make(chan CellM, 64)
 		s.cellWorkers[i].sweepChan = make(chan bool, 64)
 
-		go s.CellSaver(i)      // Listens to cellWorkers[i].cellChan
-		go s.Sweep(i)          // Listens to cellWorkers[i].sweepChan
-		go s.LineToSegments(i) // Listens to lineChan and sends to cellChans
+		go s.cellSaver(i)      // Listens to cellWorkers[i].cellChan
+		go s.sweep(i)          // Listens to cellWorkers[i].sweepChan
+		go s.lineToSegments(i) // Listens to lineChan and sends to cellChans
 		// Which cellChan gets sent the cell area and coverage increment is
 		// determined by y/s.threads. This way each cell linked list store
 		// is generated without conflict from another thread.
@@ -445,31 +455,11 @@ func (s *ScannerT) Close() {
 	}
 }
 
-//// Functions below implement the scanner interface defined in github.com/srwiley/rasterx/fill.go
-// Scanner interface {
-//     Start(a fixed.Point26_6)
-//     Line(b fixed.Point26_6)
-//     Draw()
-//     GetPathExtent() fixed.Rectangle26_6
-//     SetBounds(w, h int)
-//     SetColor(color interface{})
-//     SetWinding(useNonZeroWinding bool)
-//     Clear()
-
-//     // SetClip sets an optional clipping rectangle to restrict rendering
-//     // only to that region -- if size is 0 then ignored (set to image.ZR
-//     // to clear)
-//     SetClip(rect image.Rectangle)
-// }
+// Functions below implement the scanner interface defined in github.com/srwiley/rasterx/fill.go
 
 // Start initiates a new path. If a path is already in
 // progress it will automatically close.
 func (s *ScannerT) Start(a fixed.Point26_6) {
-	// if s.inPath {
-	// 	if s.firstPoint != s.lastPoint {
-	// 		s.Line(s.firstPoint) // close the last path
-	// 	}
-	// }
 	s.firstPoint = a
 	s.lastPoint = a
 	s.inPath = true
@@ -523,20 +513,19 @@ func (s *ScannerT) Clear() {
 
 // GetPathExtent returns the bounaries of the current path
 func (s *ScannerT) GetPathExtent() fixed.Rectangle26_6 {
-	s.lineWaiter.Wait() // These have to finish before the extent can be calculated
-	s.cellWaiter.Wait()
+	s.lineWaiter.Wait() // This has to finish before the extent can be calculated
 	maxRect := s.extents[0]
 	for i := 1; i < s.threads; i++ {
-		maxRect = Expand(maxRect, s.extents[i])
+		maxRect = expand(maxRect, s.extents[i])
 	}
 	return maxRect
 }
 
-//SetWinding does nothing for now
+// SetWinding does nothing for now
 func (s *ScannerT) SetWinding(useNonZeroWinding bool) {
 }
 
-//SetColor sends either a rasterx.ColorFunc or
+// SetColor sends either a rasterx.ColorFunc or
 // color.Color value to the collector
 func (s *ScannerT) SetColor(color interface{}) {
 	s.collector.SetColor(color)
