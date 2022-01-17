@@ -34,7 +34,11 @@ All threads are started when the NewScanT method is called. There are three type
 ```
 scanner.Close()
 ```
+For an explanation of the CL-AA algorithm, see the [cl-vectors](docs/CL-VECTORS.pdf) file in the docs folder taken from [projects.tuxee.net](http://projects.tuxee.net/cl-vectors/section-the-cl-aa-algorithm).
 See the test files for additional examples and benchmarks.
+
+![example](docs/sea.png)
+
 
 Thanks to [Freepik](http://www.freepik.com) from [Flaticon](https://www.flaticon.com/)
 Licensed by [Creative Commons 3.0](http://creativecommons.org/licenses/by/3.0/) for the test icons used in the testdata/svg/landscapeIcons folder.
